@@ -1,0 +1,176 @@
+#! /bin/bash
+
+#Sean Mann; CT320
+
+findQuotafile () {
+	index=$1
+	#echo $index
+	quotaFile=$(echo $files | cut -f $index -d " ")
+	#echo "Inside $quotaFile"
+}
+
+getHomeDir () {
+	#echo "This is line: $@"
+	tempHomeDir=$@
+	homeDir="Empty"
+	if [[ "$firstChar" == "/" ]]
+	then
+		if [[ -d $tempHomeDir ]]
+		then 
+			homeDir=$@
+			#Set string as home directory
+		else
+			echo "$0: User $@ Home directory not found" 1>&2
+			exit
+		fi
+	elif [[ "$firstChar" == "~" ]]
+	then
+		username=$(echo ${tempHomeDir:1})
+		#echo "$username"
+		homeDir=$(getent passwd | grep "$username" | cut -f 6 -d ":")
+		#echo $homeDir
+		if [[ "$homeDir" == "" ]]
+		then
+			echo "$0: User $@ Home directory not found" 1>&2
+			exit
+		fi
+		
+	else
+		output=$(getent passwd | grep "$@" | cut -f 6 -d ":")
+		#echo $output
+		if [[ "$output" == "" ]]
+		then
+			echo "$0: User $@ Home directory not found" 1>&2
+			exit
+		fi
+		homeDir=$output
+		#while reading passwd file
+		#grep for username
+		#if grep finds something, use the home directory for that line
+		#else error
+	fi
+}
+
+getMinMax () {
+	hmin=false
+	secondWord=$(echo $line | cut -f 2 -d " ")
+	#echo $secondWord
+	stringSize=$(echo ${#secondWord})
+	#echo "string size is $stringSize"
+	array=($(echo $secondWord | sed  's/\(.\)/\1 /g'))
+	let lastIndex=stringSize-1
+	#echo "last index is $lastIndex"
+	lastChar=${array[$lastIndex]}
+	#echo "last char is $lastChar"
+	if [[ "$lastChar" == "M" || "$lastChar" == "G" || "$lastChar" == "T" ]]
+	then
+		#echo "This has a character $lastChar"
+		newInt=${secondWord:0:$lastIndex}
+		#echo "The new integer is $newInt"
+		if [[ "$lastChar" == "M" ]]
+		then
+			let byteSize=$((newInt*10**6))
+		elif [[ "$lastChar" == "G" ]]
+		then
+			let byteSize=$((newInt*10**9))
+		elif [[ "$lastChar" == "T" ]]
+		then
+			let byteSize=$((newInt*10**12))
+		fi
+		#echo "byte size is $byteSize"
+	else
+		byteSize=$secondWord
+		#size is already in bytes
+	fi
+	#echo "The home dir is $homeDir"
+	currentMem=$(du -sb $homeDir | cut -f 1)
+	#echo "the users current mem is $currentMem"
+	#echo "first word is $firstWord"
+	if [ "$currentMem" -lt "$byteSize" ]
+	then
+		if [[ "$firstWord" == "hmin" ]]
+		then 
+			echo "$homeDir: hard minimum of $byteSize bytes violated"
+		elif [[ "$firstWord" == "smin" ]]
+		then 
+			echo "$homeDir: soft minimum of $byteSize bytes violated"
+		fi
+	elif [ "$currentMem" -gt "$byteSize" ]
+	then
+		if [[ "$firstWord" == "smax" ]]
+		then 
+			echo "$homeDir: soft maximum of $byteSize bytes violated"
+		elif [[ "$firstWord" == "hmax" ]]
+		then 
+			echo "$homeDir: hard maximum of $byteSize bytes violated"
+		fi
+	fi					
+}
+
+searchFile () {
+	#echo "In searchFile"
+	lineCounter=1
+	findQuotafile $1
+	#echo $quotaFile
+	while read -r line || [ -n "$line" ]
+	do
+		#echo "Linenumber: $lineCounter"
+		firstChar=$(echo $line | cut -c 1)
+		#echo $firstChar
+		if [[ "$firstChar" == "#" || "$firstChar" == "" ]]
+		then
+			:
+			#echo "this is a comment/blank line"
+		elif [ $lineCounter == 1 ]
+		then
+			getHomeDir $line
+			let lineCounter=lineCounter+1
+			#if [[ "$firstWord"]]
+		else
+			firstWord=$(echo $line | cut -f 1 -d " ")
+			#echo "The first word is $firstWord"
+			if [[ "$firstWord" == "smin" || "$firstWord" == "smax" || "$firstWord" == "hmin" || "$firstWord" == "hmax" ]]
+			then
+				getMinMax
+			else
+				echo "$0: $quotaFile: File is not formatted correctly" 1>&2
+				exit
+			fi
+			let lineCounter=lineCounter+1
+		fi
+		#search for strings smin, smax, smin, sm
+	done < $quotaFile
+	if [ "$lineCounter" -le "2" ]
+	then
+		echo "$0: $quotaFile: File is not formatted correctly" 1>&2
+		exit
+	fi
+}
+#MAIN
+counter=0
+files=$@
+#echo $files
+if [[ "$files" == "" ]]
+then
+	echo "$0: q takes at least one argument." 1>&2
+	echo "$0: Usage error: ./q <filename> ..." 1>&2
+	exit
+fi
+
+for f in $files
+do
+	#echo "$f"
+	if ! [[ -a $f ]]
+	then
+		echo "$0: File $f does not exist." 1>&2
+		exit
+	fi
+	let counter=counter+1
+done
+#echo "counter is: $counter"
+
+for f in `seq $counter`
+do
+	#echo "Here $f"
+	searchFile $f
+done

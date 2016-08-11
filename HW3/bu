@@ -1,0 +1,123 @@
+#! /bin/bash
+
+script=$0
+command=$1
+homeDir=$2
+backupDir=$3
+
+#echo $script
+#echo "command is $homeDir"
+#echo $#
+
+argUsage () {
+	echo "Usage error: $0." >&2 
+	echo "Format should be: $0 <-s | -r> <home directory> <temp directory>" >&2
+	exit 
+}
+
+if [[ $# < 3 ]]
+	then
+		echo "Not enough arguments" >&2
+		argUsage
+elif [[ $# > 3 ]]
+	then
+		echo "Too many arguments" >&2
+		argUsage		
+fi
+
+if [[ $command != "-r" ]]
+	then
+		if [[ $command != "-s" ]]
+			then
+			echo "Incorrect first argument" >&2
+			argUsage
+		fi
+fi
+
+if [[ -d $homeDir ]]
+	then 
+		if [[ -r $homeDir ]]
+			then
+				if [[ -x $homeDir ]]
+					then
+						:
+				else
+					echo "Second argument is not an executable directory" >&2
+				fi
+		else
+			echo "Second argument is not a readable directory" >&2
+		fi
+else
+	echo "Second argument is not a directory" >&2
+fi
+
+
+restore () {
+	#echo "In restore"
+	cd $homeDir
+	mkdir /tmp/scratch
+	for f in * #Check homeDirectory
+	do
+		echo "Restoring directory of user $f"
+		while read line #read repository-info 
+		do
+			user=`echo $line | cut -f 1 -d ","`
+			if [ "$user" == "$f" ]
+			then
+				echo $line
+				#echo "user is $f"
+				dir=`find $backupDir -name "$user*"`
+				#echo $dir
+				if [ -n "$dir"  ]
+				then
+					tar -xf $dir -C /tmp/scratch
+				else
+					echo "Usage error: $0. no backup found for $f" >&2
+					break
+				fi
+				find /tmp/scratch/$f -type f | cut -f 4- -d "/" | while read line
+				do
+					#echo $line #backup file
+					find $f -type f | while read line2 #real file
+					do
+						if [[ -a $line && -a $line2 ]]
+						then
+							:
+						else
+							#echo "its gone!"
+							cp /tmp/scratch/$line $homeDir/$line
+							break
+						fi
+					done
+				done
+				
+			fi
+			#echo "mahoney,/fakehome/smith" | cut -f 1 -d ","
+			#echo "$line"
+		done < $backupDir/repository-info
+	done
+	rm -r /tmp/scratch
+}
+
+#echo $command
+if [ "$command" == "-r" ]
+then
+	restore
+	exit
+fi
+
+cd $homeDir
+echo -n "" > $backupDir/repository-info
+for f in *
+do
+	echo "Creating backup of user $f"
+	tar -cJf $backupDir/$f.txz $f
+	echo -n "$f," >> $backupDir/repository-info
+	echo -n "$homeDir/$f," >> $backupDir/repository-info
+	echo -n "`date +%s`," >> $backupDir/repository-info
+	echo -n "`find $f -type f | wc -l`," >> $backupDir/repository-info
+	#total = `find $f -type d | wc -l`
+	echo -n "`find $f -type d | wc -l`," >> $backupDir/repository-info
+	echo "`du -bs $f | cut -c1-5`" >> $backupDir/repository-info
+	#echo "f is $f"
+done

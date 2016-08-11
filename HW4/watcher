@@ -1,0 +1,142 @@
+#! /bin/bash
+#Sean Mann; CT320
+
+argUsage () {
+	echo "Usage error: $0" 1>&2 
+	echo "Format should be: $0 <command> OR $0 -d <command> OR $0 -l" 1>&2
+	exit 
+}
+#--------------------
+#TO DO:
+#include debug statements
+#make sure error ouput goes to stdout i.e. errors are stored in files
+#----------------------
+command=$@
+firstFlag=`echo $command | cut -f 1 -d " "`
+secondFlag=${#command}
+if [[ $command == "" ]]
+then
+	argUsage
+elif [[ $command == "-d" ]]
+then
+	echo "Flag of -d but no command found" 1>&2
+	argUsage
+elif [[ $firstFlag == "-l" ]]
+then
+	if [ "$secondFlag" -gt "2" ]
+	then
+		echo "Flag of -l should have no other arguments" 1>&2
+		argUsage
+	fi
+fi
+#--------------------
+randNumber=$RANDOM
+#echo "The random number is $randNumber"
+
+#echo "You gave me: $command"
+db="$HOME/.watcher"
+#------------------
+if [[ ! -d $db ]]
+then
+	#echo "DB does not exist"
+	#echo "mkdir $db"
+	mkdir $db
+	chmod u=rwx $db
+fi
+debug=false
+if [[ $firstFlag == "-d" ]]
+then
+	debug=true
+	command=`echo $command | cut -f 2- -d " "`
+elif [[ $command == "-l" ]]
+then
+	echo "Current commands that have been run:"
+	for f in $db/*
+	do
+		cat $f/command
+	done
+	exit
+fi
+if [[ $debug == true ]]
+then
+		echo "Debug is ON"
+fi
+
+
+
+#output=`eval $command`
+#echo "The output is: $output"
+
+
+if [[ `ls $db` == "" ]]
+then
+	#echo "Database is empty"
+	echo "Command has not been run before. Here is the output: "
+	eval $command
+	#echo "1" > $db/.counter
+	mkdir $db/$randNumber
+	echo "$command" &> $db/$randNumber/command
+	eval $command &> $db/$randNumber/output
+	if [[ $debug == true ]]
+	then
+		echo "The command is being stored in: $db/$randNumber/command"
+		echo "The output is being stored in: $db/$randNumber/output"
+	fi
+	exit 
+fi
+#echo "File is NOT empty"
+
+flag=false
+for f in $db/*
+do
+	#echo "db: $f"
+	#echo $p
+	contents=`cat $f/command`
+	#echo "The contents is $contents"
+	if [[ "$contents" == "$command" ]]
+	then
+		flag=true
+		#fileNum=`echo $f | cut -f 8 -d "/"`
+		fileNum=`echo $f | rev | cut -f 1 -d "/" | rev`
+		#echo $fileNum
+	fi
+done <$db
+#echo $flag
+
+if [[ $flag == "false" ]]
+then
+	echo "Command has not been run before. Here is the output: "
+	eval $command
+	mkdir $db/$randNumber
+	echo "$command" &> $db/$randNumber/command
+	eval $command &> $db/$randNumber/output
+	if [[ $debug == true ]]
+	then
+		echo "The command is being stored in: $db/$randNumber/command"
+		echo "The output is being stored in: $db/$randNumber/output"
+	fi
+else
+	#echo "Command HAS been run before"
+	contents=`cat $db/$fileNum/output`
+	#echo "contents is: $contents"
+	diffStr=`eval $command 2>&1`
+	#echo "Current is: $diffStr"
+	if [[ $contents != $diffStr ]]
+	#Copy new output into file and compare the two files
+	then
+		echo "The output of the command has CHANGED"
+		echo $diffStr &> $db/.tmp
+		diff $db/$fileNum/output $db/.tmp
+		echo $diffStr &> $db/$fileNum/output
+		#diff $db/$content $diffStr
+		rm -r $db/.tmp
+	#else
+		#echo "The output has not changed"
+	fi
+	if [[ $debug == true ]]
+	then
+		echo "This command has been run before"
+		echo "The command is being stored in: $db/$fileNum/command"
+		echo "The output is being stored in: $db/$fileNum/output"
+	fi
+fi
